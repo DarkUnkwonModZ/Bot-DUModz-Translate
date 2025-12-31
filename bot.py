@@ -15,166 +15,165 @@ CHANNEL_URL = "https://t.me/DemoTestDUModz"
 WEBSITE_URL = "https://darkunkwonmodz.blogspot.com"
 LOGO_URL = "https://raw.githubusercontent.com/DarkUnkwonModZ/Blogger-DarkUnkownModZ-Appinfo/refs/heads/main/IMG/dumodz-logo-final.png"
 
-# User Data (Memory-based)
-user_data = {} # {user_id: {'audio': False, 'verified': False}}
+# User Settings Store
+user_pref = {} # {user_id: {'audio': False}}
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- UTILS ---
-async def is_member(user_id, bot):
+# --- CORE UTILS ---
+async def check_membership(user_id, bot):
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_HANDLE, user_id=user_id)
         return member.status in [constants.ChatMemberStatus.MEMBER, constants.ChatMemberStatus.ADMINISTRATOR, constants.ChatMemberStatus.OWNER]
     except: return False
 
-async def send_action_animation(message, text_list):
-    """Creates a smooth loading animation effect."""
-    for text in text_list:
-        await message.edit_text(text, parse_mode='Markdown')
-        await asyncio.sleep(0.5)
+def get_clean_text(text, cmd):
+    if text.startswith(cmd):
+        return text[len(cmd):].strip()
+    return text.strip()
 
-# --- CORE HANDLERS ---
+# --- INTERFACE DESIGN ---
+
+async def show_welcome_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE, is_edit=False):
+    """The Premium Dashboard after verification."""
+    user = update.effective_user
+    u_id = user.id
+    audio_mode = "🔊 ENABLED" if user_pref.get(u_id, {}).get('audio', False) else "🔇 DISABLED"
+
+    caption = (
+        f"👑 **DARK UNKNOWN AI - DASHBOARD**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 **USER:** {user.first_name}\n"
+        f"🆔 **ID:** `{u_id}`\n"
+        f"🛡️ **STATUS:** `PREMIUM VERIFIED` ✅\n"
+        f"⚙️ **AUDIO MODE:** `{audio_mode}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✨ **How to use?**\n"
+        f"➜ Just send any text to translate to English.\n"
+        f"➜ Use `/bn <text>` for direct Bengali translation.\n\n"
+        f"🚀 *Powered by Dark Unkwon ModZ*"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("⚙️ SETTINGS", callback_data="open_settings"),
+         InlineKeyboardButton("🌐 WEBSITE", url=WEBSITE_URL)],
+        [InlineKeyboardButton("📢 OFFICIAL CHANNEL", url=CHANNEL_URL)]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if is_edit:
+        await update.callback_query.edit_message_caption(caption=caption, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_photo(photo=LOGO_URL, caption=caption, reply_markup=reply_markup, parse_mode='Markdown')
+
+# --- HANDLERS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    bot = context.bot
     
-    # 1. PRE-VERIFICATION CHECK
-    if not await is_member(user_id, bot):
-        keyboard = [[InlineKeyboardButton("🔐 VERIFY MEMBERSHIP", url=CHANNEL_URL)],
-                    [InlineKeyboardButton("🔄 CLICK TO CONFIRM", callback_data="verify_me")]]
+    # Verification Check
+    if not await check_membership(user_id, context.bot):
+        keyboard = [
+            [InlineKeyboardButton("📢 JOIN CHANNEL", url=CHANNEL_URL)],
+            [InlineKeyboardButton("✅ VERIFY NOW", callback_data="verify_user")]
+        ]
         await update.message.reply_photo(
             photo=LOGO_URL,
-            caption="⚠️ **ACCESS RESTRICTED**\n\nTo use this Premium Translator, you must join our official channel first.\n\nClick the buttons below to verify.",
+            caption=(
+                "🛡️ **MEMBERSHIP VERIFICATION**\n\n"
+                "You must join our official channel to use this premium AI tool.\n\n"
+                f"📍 Channel: {CHANNEL_HANDLE}\n\n"
+                "After joining, click the **Verify Now** button below."
+            ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         return
 
-    # 2. POST-VERIFICATION WELCOME
-    await show_dashboard(update, context)
-
-async def show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
-    user = update.effective_user
-    audio_status = "🔊 ON" if user_data.get(user.id, {}).get('audio', False) else "🔇 OFF"
-    
-    caption = (
-        f"🌟 **WELCOME TO DARK UNKNOWN AI** 🌟\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 **USER:** {user.first_name}\n"
-        f"🆔 **ID:** `{user.id}`\n"
-        f"🛡️ **STATUS:** `PREMIUM VERIFIED` ✅\n"
-        f"⚙️ **AUDIO:** `{audio_status}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💬 Send me any text to translate to **English**.\n"
-        f"Use `/bn <text>` for Bengali specific mode."
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("⚙️ SETTINGS", callback_data="open_settings"),
-         InlineKeyboardButton("🌐 WEBSITE", url=WEBSITE_URL)],
-        [InlineKeyboardButton("📢 CHANNEL", url=CHANNEL_URL)]
-    ]
-    
-    if edit:
-        await update.callback_query.edit_message_caption(caption=caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-    else:
-        await update.message.reply_photo(photo=LOGO_URL, caption=caption, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-
-async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    if user_id not in user_data: user_data[user_id] = {'audio': False}
-    
-    # Toggle logic
-    if query.data == "toggle_audio":
-        user_data[user_id]['audio'] = not user_data[user_id]['audio']
-        await query.answer("Audio Mode Updated!")
-    
-    audio_btn = "🔊 DISABLE AUDIO" if user_data[user_id]['audio'] else "🔇 ENABLE AUDIO"
-    
-    keyboard = [
-        [InlineKeyboardButton(audio_btn, callback_data="toggle_audio")],
-        [InlineKeyboardButton("🗑️ CLEAR CHAT", callback_data="clear_chat")],
-        [InlineKeyboardButton("🔙 BACK TO HOME", callback_data="back_home")]
-    ]
-    
-    await query.edit_message_caption(
-        caption="🛠️ **PREMIUM SETTINGS CONTROL**\nCustomize your translation experience below:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+    await show_welcome_dashboard(update, context)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
 
-    if query.data == "verify_me":
-        if await is_member(user_id, context.bot):
-            await query.delete_message()
-            await show_dashboard(update, context)
-        else:
-            await context.bot.send_message(user_id, "❌ Verification failed. Please join the channel first!")
-            
-    elif query.data == "open_settings" or query.data == "toggle_audio":
-        await settings_menu(update, context)
-        
-    elif query.data == "back_home":
-        await show_dashboard(update, context, edit=True)
-        
-    elif query.data == "clear_chat":
-        await query.edit_message_caption("✨ Settings cleared and session refreshed!", 
-                                         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_home")]]))
+    if user_id not in user_pref: user_pref[user_id] = {'audio': False}
 
-async def translator_engine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if query.data == "verify_user":
+        if await check_membership(user_id, context.bot):
+            # Smooth Transition Animation
+            await query.edit_message_caption("⏳ **Verifying membership...**")
+            await asyncio.sleep(1)
+            await query.edit_message_caption("✅ **Access Granted! Loading Dashboard...**")
+            await asyncio.sleep(1)
+            await show_welcome_dashboard(update, context, is_edit=True)
+        else:
+            await context.bot.send_message(user_id, "⚠️ **Action Required:** Please join the channel first!")
+
+    elif query.data == "open_settings":
+        audio_btn = "🔊 AUDIO: ON" if user_pref[user_id]['audio'] else "🔇 AUDIO: OFF"
+        keyboard = [
+            [InlineKeyboardButton(audio_btn, callback_data="toggle_audio")],
+            [InlineKeyboardButton("🔙 BACK TO HOME", callback_data="back_home")]
+        ]
+        await query.edit_message_caption("🛠️ **AI SETTINGS CONTROL**\nToggle features below:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    elif query.data == "toggle_audio":
+        user_pref[user_id]['audio'] = not user_pref[user_id]['audio']
+        await handle_callback(update, context) # Refresh menu
+
+    elif query.data == "back_home":
+        await show_welcome_dashboard(update, context, is_edit=True)
+
+async def translate_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Security Check
-    if not await is_member(user_id, context.bot):
-        await update.message.reply_text("🚫 Join @DemoTestDUModz to use this bot.")
+    # Re-check membership on every request for security
+    if not await check_membership(user_id, context.bot):
+        await update.message.reply_text("🚫 **Access Expired!** Please /start and verify again.")
         return
 
-    text = update.message.text
-    if text.startswith('/'): return # Ignore commands
+    raw_text = update.message.text
+    if raw_text.startswith('/'): return
 
     # Animation
-    status = await update.message.reply_text("🔍")
-    await send_action_animation(status, ["📡 Scanning...", "⚙️ Translating...", "✅ Done!"])
+    status = await update.message.reply_text("⚡")
+    await asyncio.sleep(0.3)
+    await status.edit_text("⚙️ **AI is Processing...**")
 
     try:
-        translated = GoogleTranslator(source='auto', target='en').translate(text)
-        
+        # Translation Logic
+        translator = GoogleTranslator(source='auto', target='en')
+        translated = translator.translate(raw_text)
+
         result = (
-            f"💠 **AI TRANSLATION**\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📥 **INPUT:** `{text}`\n\n"
+            f"💠 **AI TRANSLATION SUCCESS**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📥 **INPUT:** `{raw_text}`\n"
             f"📤 **ENGLISH:** `{translated}`\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 *Dark Unkwon AI*"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 *Dark Unkwon AI Engine*"
         )
         
         await status.edit_text(result, parse_mode='Markdown')
 
-        # Audio Output
-        if user_data.get(user_id, {}).get('audio', False):
+        # Audio Logic
+        if user_pref.get(user_id, {}).get('audio', False):
             tts = gTTS(text=translated, lang='en')
-            voice_io = io.BytesIO()
-            tts.write_to_fp(voice_io)
-            voice_io.seek(0)
-            await update.message.reply_voice(voice=voice_io)
+            voice_buf = io.BytesIO()
+            tts.write_to_fp(voice_buf)
+            voice_buf.seek(0)
+            await update.message.reply_voice(voice=voice_buf, caption="🔊 Audio Transcription")
 
     except Exception as e:
-        await status.edit_text(f"❌ Error: {str(e)}")
+        await status.edit_text(f"❌ **Error:** Translation failed. Try again later.")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("settings", settings_menu))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), translator_engine))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), translate_handler))
     
-    print("Bot v4.0 is running perfectly...")
+    print("Bot v5.0 Pro is Live!")
     app.run_polling()
