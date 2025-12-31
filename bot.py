@@ -11,8 +11,8 @@ from gtts import gTTS
 TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = 8504263842
 ADMIN_USERNAME = "@DarkUnkwon"
-CHANNEL_USERNAME = "@DarkUnkwonModZ"
-CHANNEL_URL = "https://t.me/DarkUnkwonModZ"
+CHANNEL_USERNAME = "@DemoTestDUModz"
+CHANNEL_URL = "https://t.me/DemoTestDUModz"
 WEBSITE_URL = "https://darkunkwonmodz.blogspot.com"
 LOGO_URL = "https://raw.githubusercontent.com/DarkUnkwonModZ/Blogger-DarkUnkownModZ-Appinfo/refs/heads/main/IMG/dumodz-logo-final.png"
 
