@@ -1,103 +1,145 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.error import BadRequest
 from deep_translator import GoogleTranslator
 
-# Logging setup
+# --- CONFIGURATION ---
+TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_ID = 8504263842
+ADMIN_USERNAME = "@DarkUnkwon"
+CHANNEL_USERNAME = "@DemoTestDUModz"  # For Force Join
+CHANNEL_URL = "https://t.me/DemoTestDUModz"
+WEBSITE_URL = "https://darkunkwonmodz.blogspot.com"
+LOGO_URL = "https://raw.githubusercontent.com/DarkUnkwonModZ/Blogger-DarkUnkownModZ-Appinfo/refs/heads/main/IMG/dumodz-logo-final.png"
+
+# Logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Configuration & Links
-LOGO_URL = "https://raw.githubusercontent.com/DarkUnkwonModZ/Blogger-DarkUnkownModZ-Appinfo/refs/heads/main/IMG/dumodz-logo-final.png"
-TELEGRAM_LINK = "https://t.me/DarkUnkwonModZ"
-WEBSITE_LINK = "https://darkunkwonmodz.blogspot.com"
-BRAND_NAME = "Dark Unkwon ModZ"
+# --- HELPER FUNCTIONS ---
 
-# Translation Functions
-def translate_text(text, target_lang='en', source_lang='auto'):
+async def is_subscribed(user_id, bot):
+    """Checks if the user is a member of the required channel."""
     try:
-        translated = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
-        return translated
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in [constants.ChatMemberStatus.MEMBER, 
+                                 constants.ChatMemberStatus.ADMINISTRATOR, 
+                                 constants.ChatMemberStatus.OWNER]
+    except BadRequest:
+        return False
     except Exception as e:
-        return f"Error: {str(e)}"
+        logging.error(f"Subscription check error: {e}")
+        return True # Default to true to avoid blocking users if bot isn't admin
 
-# Welcome Screen (Start Command)
+def clean_text(text, command_to_remove=None):
+    """Removes commands from text so they don't get translated."""
+    if command_to_remove and text.startswith(command_to_remove):
+        return text[len(command_to_remove):].strip()
+    return text.strip()
+
+# --- COMMAND HANDLERS ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_name = update.effective_user.first_name
-    welcome_text = (
-        f"👋 **স্বাগতম, {user_name}!**\n\n"
-        f"🚀 **{BRAND_NAME}** অ্যাডভান্সড ট্রান্সলেটর বটে আপনাকে স্বাগতম।\n\n"
-        "✨ **ফিচারসমূহ:**\n"
-        "🔹 **Auto Detect:** যেকোনো ভাষা দিলে সরাসরি English হবে।\n"
-        "🔹 **BN to EN:** নির্দিষ্টভাবে বাংলা থেকে ইংলিশ করতে পারবেন।\n"
-        "🔹 **Commands:** দ্রুত কাজের জন্য কমান্ড ব্যবহার করুন।\n\n"
-        "নিচের বাটনগুলো ব্যবহার করে আমাদের সাথে যুক্ত থাকুন।"
-    )
+    user = update.effective_user
     
-    keyboard = [
-        [InlineKeyboardButton("📢 Telegram Channel", url=TELEGRAM_LINK)],
-        [InlineKeyboardButton("🌐 Visit Website", url=WEBSITE_LINK)]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Notify Admin
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID, 
+            text=f"🚀 **New User Started Bot!**\n\n👤 Name: {user.first_name}\n🆔 ID: `{user.id}`\n🔗 User: @{user.username}",
+            parse_mode='Markdown'
+        )
+    except:
+        pass
 
+    welcome_msg = (
+        f"🌟 **PREMIUM TRANSLATOR PRO** 🌟\n\n"
+        f"Welcome, **{user.first_name}**!\n"
+        f"I am an Advanced AI Translator powered by **Dark Unkwon ModZ**.\n\n"
+        "✨ **Capabilities:**\n"
+        "🔹 Auto Detect any language ➔ English\n"
+        "🔹 Specific Bengali ➔ English via `/bn` command\n"
+        "🔹 High-Speed & Precise Translation\n\n"
+        "📢 **Note:** You must join our channel to use this service."
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_URL)],
+        [InlineKeyboardButton("🌐 Official Website", url=WEBSITE_URL)],
+        [InlineKeyboardButton("👨‍💻 Admin Support", url=f"https://t.me/{ADMIN_USERNAME.replace('@','')}")]
+    ]
+    
     await update.message.reply_photo(
         photo=LOGO_URL,
-        caption=welcome_text,
+        caption=welcome_msg,
         parse_mode='Markdown',
-        reply_markup=reply_markup
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# Help Command
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    help_text = (
-        "📖 **কিভাবে ব্যবহার করবেন?**\n\n"
-        "1️⃣ শুধু যেকোনো টেক্সট লিখুন, আমি অটো-ডিটেক্ট করে English করে দেব।\n"
-        "2️⃣ `/bn` লিখে স্পেস দিয়ে বাংলা লিখলে সেটি English হবে।\n"
-        "3️⃣ `/auto` লিখে যেকোনো ভাষা দিলে সেটি English হবে।\n\n"
-        "⚡ Powered by Dark Unkwon ModZ"
-    )
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+async def handle_translation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bot = context.bot
+    
+    # 1. Force Join Security Check
+    if not await is_subscribed(user_id, bot):
+        join_btn = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Join Now", url=CHANNEL_URL)]])
+        await update.message.reply_text(
+            f"❌ **Access Denied!**\n\nYou must join our official channel **{CHANNEL_USERNAME}** to use this bot.",
+            reply_markup=join_btn
+        )
+        return
 
-# Auto Detect to English Handler
-async def handle_auto_translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    if user_text:
-        wait_msg = await update.message.reply_text("⏳ Detecting and Translating...")
-        translated = translate_text(user_text, target_lang='en', source_lang='auto')
+    # 2. Process Text
+    raw_text = update.message.text
+    
+    # Determine source language and clean command text
+    if raw_text.startswith('/bn'):
+        source_lang = 'bn'
+        target_lang = 'en'
+        input_text = clean_text(raw_text, '/bn')
+    else:
+        source_lang = 'auto'
+        target_lang = 'en'
+        input_text = clean_text(raw_text)
+
+    if not input_text:
+        await update.message.reply_text("❗ Please provide text after the command.")
+        return
+
+    # 3. Translation Process
+    status_msg = await update.message.reply_text("🔍 *AI is processing text...*", parse_mode='Markdown')
+    
+    try:
+        translated = GoogleTranslator(source=source_lang, target=target_lang).translate(input_text)
         
         response = (
-            f"✅ **Translated to English:**\n\n"
-            f"📝 `{translated}`\n\n"
-            f"👤 *Powered by {BRAND_NAME}*"
+            f"💠 **Translation Result** 💠\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📥 **Input:** `{input_text}`\n\n"
+            f"📤 **English:** `{translated}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Powered by:** [Dark Unkwon ModZ]({WEBSITE_URL})"
         )
-        await wait_msg.edit_text(response, parse_mode='Markdown')
-
-# Specific BN to EN Command Handler
-async def bn_to_en_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ দয়া করে কমান্ডের সাথে টেক্সট দিন। উদাহরণ: `/bn কেমন আছো`")
-        return
+        
+        await status_msg.edit_text(response, parse_mode='Markdown', disable_web_page_preview=True)
     
-    user_text = " ".join(context.args)
-    translated = translate_text(user_text, target_lang='en', source_lang='bn')
-    await update.message.reply_text(f"🇧🇩 ➡️ 🇺🇸 **English:**\n\n`{translated}`", parse_mode='Markdown')
+    except Exception as e:
+        await status_msg.edit_text(f"❌ **Error:** Translation failed. Try again later.")
+        logging.error(f"Translation Error: {e}")
 
 if __name__ == '__main__':
-    TOKEN = os.getenv('BOT_TOKEN')
-    
     if not TOKEN:
-        print("Error: BOT_TOKEN not found!")
+        print("BOT_TOKEN is missing in Environment Variables!")
     else:
         app = ApplicationBuilder().token(TOKEN).build()
         
-        # Handlers
         app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("help", help_command))
-        app.add_handler(CommandHandler("bn", bn_to_en_command))
-        app.add_handler(CommandHandler("auto", handle_auto_translate))
+        app.add_handler(CommandHandler("bn", handle_translation))
         
-        # General messages will be handled as auto-detect
-        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_auto_translate))
+        # General messages handle auto-detect
+        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_translation))
         
-        print("Advanced Bot is running...")
+        print("Premium Bot is Online...")
         app.run_polling()
