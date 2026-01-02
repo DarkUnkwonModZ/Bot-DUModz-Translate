@@ -1,12 +1,12 @@
-name: Dark Unknown AI 24/7
+name: Telegram Bot 24/7
 
 on:
   schedule:
-    - cron: '0 */4 * * *' # প্রতি ৪ ঘণ্টা পর পর নতুন করে রান হবে
+    - cron: '0 */4 * * *' # প্রতি ৪ ঘণ্টা পর পর রান হবে
   workflow_dispatch:
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -19,8 +19,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install python-telegram-bot deep-translator gTTS
-          # যদি রিকোয়ারমেন্ট ফাইল থাকে: pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install "python-telegram-bot[job-queue]" deep-translator gTTS
 
       - name: Run Bot
         env:
